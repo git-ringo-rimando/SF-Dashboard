@@ -184,6 +184,12 @@ const TAG_CARD_CLS: Record<ProductTag, string> = {
   "Greatday":  "border-orange-900/60 bg-orange-950/20",
 };
 
+const TAG_BANNER_CLS: Record<string, string> = {
+  "Sunfish 6": "bg-red-500/30 text-red-300 border border-red-600",
+  "Sunfish 7": "bg-blue-500/30 text-blue-300 border border-blue-600",
+  "Greatday":  "bg-orange-500/30 text-orange-300 border border-orange-600",
+};
+
 function autoDetectTag(project: string): ProductTag | null {
   const p = project.toLowerCase();
   if (p.includes("sunfish 7") || p.includes("sunfish7") || p.includes("sunfish hcm")) return "Sunfish 7";
@@ -1096,8 +1102,11 @@ export default function Dashboard() {
   const [showTagManager, setShowTagManager] = useState(false);
   const [newOpenTickets, setNewOpenTickets] = useState<RecentTicket[]>([]);
   const [showNewTicketModal, setShowNewTicketModal] = useState(false);
+  const [showOpenTicketsModal, setShowOpenTicketsModal] = useState(false);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | "unsupported">("default");
   const prevOpenIdsRef = useRef<Set<string> | null>(null);
+  const hasShownInitialModalRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchData = useCallback(async () => {
@@ -1106,6 +1115,10 @@ export default function Dashboard() {
     if (!json.hasCreds) { router.replace("/"); return; }
     setCache(json.cache);
     setLoading(false);
+    if (!hasShownInitialModalRef.current && json.cache?.recentTickets?.some((t: RecentTicket) => t.status === "Open")) {
+      hasShownInitialModalRef.current = true;
+      setShowOpenTicketsModal(true);
+    }
   }, [router]);
 
   // Fetch username once on mount
@@ -1143,6 +1156,7 @@ export default function Dashboard() {
 
     if (brandNew.length === 0) return;
 
+    setBannerDismissed(false);
     setNewOpenTickets((prev) => {
       const existingIds = new Set(prev.map((t) => t.ticketNo));
       return [...prev, ...brandNew.filter((t) => !existingIds.has(t.ticketNo))];
@@ -1160,7 +1174,17 @@ export default function Dashboard() {
 
   const triggerScrape = useCallback(async () => {
     setScraping(true);
-    await fetch("/api/scrape", { method: "POST" }).catch(() => {});
+    const dates = (cache?.recentTickets ?? [])
+      .map((t) => toDateOnly(t.createdDate))
+      .filter(Boolean) as string[];
+    const defaultFrom = dates.length
+      ? dates.reduce((a, b) => (a < b ? a : b))
+      : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    await fetch("/api/scrape", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ targetDateFrom: defaultFrom }),
+    }).catch(() => {});
     const before = cache?.scrapedAt;
     const poll = async () => {
       const res  = await fetch("/api/data");
@@ -1432,59 +1456,152 @@ export default function Dashboard() {
     return { from: sorted[0], to: sorted[sorted.length - 1] };
   }, [cache]);
 
+  // Open tickets matching the current filter — used for the persistent status banner
+  const bannerTickets = useMemo(() => {
+    return filteredRecent.filter((t) => t.status === "Open");
+  }, [filteredRecent]);
+
+
   const t = displayTotals;
 
   return (
-    <div className={`min-h-screen bg-gray-950 ${newOpenTickets.length > 0 ? "pt-9" : ""}`}>
-      {/* Rolling ticker banner — new open tickets */}
-      {newOpenTickets.length > 0 && (
-        <div className="fixed top-0 left-0 right-0 z-[60] flex items-center h-9 bg-red-950 border-b border-red-800 overflow-hidden shadow-lg">
-          {/* Fixed label */}
-          <div className="flex items-center gap-2 px-4 h-full bg-red-900 border-r border-red-700 shrink-0">
+    <div className={`min-h-screen bg-gray-950 ${bannerTickets.length > 0 && !bannerDismissed ? "pt-9" : ""}`}>
+      {/* Persistent rolling ticker — all currently open tickets */}
+      {bannerTickets.length > 0 && !bannerDismissed && (
+        <div className="fixed top-0 left-0 right-0 z-[60] flex items-center h-9 bg-gray-950 border-b border-red-900/60 overflow-hidden shadow-lg">
+          {/* Fixed label — click to open modal */}
+          <button
+            onClick={() => setShowOpenTicketsModal(true)}
+            className="flex items-center gap-2 px-4 h-full bg-red-950/80 border-r border-red-800 shrink-0 hover:bg-red-900/80 transition"
+          >
             <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
             <span className="text-red-200 text-xs font-bold uppercase tracking-widest whitespace-nowrap">
-              {newOpenTickets.length} New Open Ticket{newOpenTickets.length > 1 ? "s" : ""}
+              {bannerTickets.length} Open
             </span>
-          </div>
-          {/* Scrolling ticker */}
+          </button>
+          {/* Scrolling ticker — duplicated for seamless loop */}
           <div className="flex-1 overflow-hidden relative h-full flex items-center">
-            <div className="animate-marquee flex items-center gap-10">
-              {newOpenTickets.map((t) => (
-                <span key={t.ticketNo} className="flex items-center gap-2 text-xs">
-                  <span className="text-blue-300 font-mono font-semibold">{t.ticketNo}</span>
-                  <span className="text-red-400">·</span>
-                  <span className="text-red-100">{t.project}</span>
-                  {t.subject && (
-                    <>
-                      <span className="text-red-700">—</span>
-                      <span className="text-red-300">{t.subject}</span>
-                    </>
-                  )}
-                </span>
-              ))}
-              {/* Duplicate for seamless loop */}
-              {newOpenTickets.map((t) => (
-                <span key={`dup-${t.ticketNo}`} className="flex items-center gap-2 text-xs">
-                  <span className="text-blue-300 font-mono font-semibold">{t.ticketNo}</span>
-                  <span className="text-red-400">·</span>
-                  <span className="text-red-100">{t.project}</span>
-                  {t.subject && (
-                    <>
-                      <span className="text-red-700">—</span>
-                      <span className="text-red-300">{t.subject}</span>
-                    </>
-                  )}
-                </span>
-              ))}
+            <div className="animate-marquee flex items-center">
+              {[...bannerTickets, ...bannerTickets].map((ticket, i) => {
+                const tag = getProjectTag(ticket.project, tagMap);
+                return (
+                  <span key={i} className="flex items-center gap-2 text-xs px-6">
+                    {tag ? (
+                      <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold ${TAG_BANNER_CLS[tag]}`}>
+                        {tag}
+                      </span>
+                    ) : (
+                      <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-gray-700 text-gray-400 border border-gray-600">
+                        Untagged
+                      </span>
+                    )}
+                    <span className="text-gray-400">·</span>
+                    <span className="text-gray-200">{ticket.project}</span>
+                    <span className="text-gray-600">·</span>
+                    <span className="text-amber-300 font-mono font-semibold">{ticket.ticketNo}</span>
+                  </span>
+                );
+              })}
             </div>
           </div>
           {/* Dismiss */}
           <button
-            onClick={() => setNewOpenTickets([])}
-            className="px-4 h-full text-red-400 hover:text-white hover:bg-red-800 transition shrink-0 text-lg leading-none border-l border-red-800"
+            onClick={() => setBannerDismissed(true)}
+            title="Dismiss banner"
+            className="px-4 h-full text-red-400 hover:text-white hover:bg-red-900/60 transition shrink-0 text-lg leading-none border-l border-red-900/60"
           >
             ×
           </button>
+        </div>
+      )}
+
+      {/* Open tickets modal */}
+      {showOpenTicketsModal && bannerTickets.length > 0 && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center px-4">
+          <div className="absolute inset-0" onClick={() => setShowOpenTicketsModal(false)} />
+          <div className="relative w-full max-w-lg bg-gray-900 border border-red-800 rounded-2xl shadow-2xl overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 bg-red-950/70 border-b border-red-800">
+              <div className="flex items-center gap-3">
+                <span className="w-3 h-3 rounded-full bg-red-400 animate-pulse shrink-0" />
+                <div>
+                  <p className="text-white font-bold text-[50px] uppercase tracking-widest text-center">Open Tickets</p>
+                  <p className="text-red-400 text-xs">{bannerTickets.length} ticket{bannerTickets.length > 1 ? "s" : ""} currently open</p>
+                </div>
+              </div>
+              <button onClick={() => setShowOpenTicketsModal(false)} className="text-red-400 hover:text-white transition text-2xl leading-none">×</button>
+            </div>
+
+            {/* Column headers */}
+            <div className="grid grid-cols-3 px-5 py-2 border-b border-gray-800 bg-gray-900/80">
+              <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Product</span>
+              <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Project</span>
+              <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Ticket No.</span>
+            </div>
+
+            {/* Ticket list */}
+            <div className="divide-y divide-gray-800/60 max-h-96 overflow-y-auto">
+              {bannerTickets.map((ticket) => {
+                const tag = getProjectTag(ticket.project, tagMap);
+                return (
+                  <div key={ticket.ticketNo} className="grid grid-cols-3 items-center px-5 py-3 hover:bg-gray-800/40 transition gap-3">
+                    {/* Product */}
+                    <div>
+                      {tag ? (
+                        <span className={`inline-flex px-2 py-0.5 rounded text-[20px] font-bold ${TAG_BANNER_CLS[tag]}`}>
+                          {tag}
+                        </span>
+                      ) : (
+                        <span className="inline-flex px-2 py-0.5 rounded text-[20px] font-bold bg-gray-700 text-gray-400 border border-gray-600">
+                          Untagged
+                        </span>
+                      )}
+                    </div>
+                    {/* Project */}
+                    <p className="text-gray-200 text-[20px] break-words">{ticket.project}</p>
+                    {/* Ticket No */}
+                    <p className="text-amber-300 font-mono text-[20px] font-semibold">{ticket.ticketNo}</p>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 py-3 border-t border-gray-800 flex gap-2">
+              <button
+                onClick={() => setShowOpenTicketsModal(false)}
+                className="flex-1 py-2 text-sm rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 transition"
+              >
+                Close
+              </button>
+              {notifPermission !== "unsupported" && notifPermission !== "granted" && (
+                <button
+                  onClick={async () => {
+                    const result = await Notification.requestPermission();
+                    setNotifPermission(result);
+                  }}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 text-sm rounded-lg
+                             bg-yellow-600/20 border border-yellow-700 text-yellow-400
+                             hover:bg-yellow-600/40 transition"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                  </svg>
+                  Enable Alerts
+                </button>
+              )}
+              {notifPermission === "granted" && (
+                <div className="flex-1 flex items-center justify-center gap-1.5 py-2 text-sm rounded-lg
+                                bg-green-600/20 border border-green-700 text-green-400">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Alerts Enabled
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
