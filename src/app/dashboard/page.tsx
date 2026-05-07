@@ -1094,6 +1094,10 @@ export default function Dashboard() {
   const [username, setUsername] = useState<string | null>(null);
   const [tagMap, setTagMap]     = useState<TagMap>({});
   const [showTagManager, setShowTagManager] = useState(false);
+  const [newOpenTickets, setNewOpenTickets] = useState<RecentTicket[]>([]);
+  const [showNewTicketModal, setShowNewTicketModal] = useState(false);
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission | "unsupported">("default");
+  const prevOpenIdsRef = useRef<Set<string> | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchData = useCallback(async () => {
@@ -1115,6 +1119,44 @@ export default function Dashboard() {
   useEffect(() => {
     fetch("/api/tags").then((r) => r.json()).then(setTagMap).catch(() => {});
   }, []);
+
+  // Sync notification permission state
+  useEffect(() => {
+    if (!("Notification" in window)) { setNotifPermission("unsupported"); return; }
+    setNotifPermission(Notification.permission);
+  }, []);
+
+  // Detect new open tickets on each cache update
+  useEffect(() => {
+    if (!cache) return;
+    const openTickets = cache.recentTickets.filter((t) => t.status === "Open");
+    const currentIds  = new Set(openTickets.map((t) => t.ticketNo));
+
+    if (prevOpenIdsRef.current === null) {
+      // First load — record baseline, do not notify
+      prevOpenIdsRef.current = currentIds;
+      return;
+    }
+
+    const brandNew = openTickets.filter((t) => !prevOpenIdsRef.current!.has(t.ticketNo));
+    prevOpenIdsRef.current = currentIds;
+
+    if (brandNew.length === 0) return;
+
+    setNewOpenTickets((prev) => {
+      const existingIds = new Set(prev.map((t) => t.ticketNo));
+      return [...prev, ...brandNew.filter((t) => !existingIds.has(t.ticketNo))];
+    });
+    setShowNewTicketModal(true);
+
+    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+      brandNew.forEach((t) => {
+        new Notification("🔴 New Open Ticket — SF Dashboard", {
+          body: `${t.ticketNo}  ·  ${t.project}`,
+        });
+      });
+    }
+  }, [cache]);
 
   const triggerScrape = useCallback(async () => {
     setScraping(true);
@@ -1393,7 +1435,116 @@ export default function Dashboard() {
   const t = displayTotals;
 
   return (
-    <div className="min-h-screen bg-gray-950">
+    <div className={`min-h-screen bg-gray-950 ${newOpenTickets.length > 0 ? "pt-9" : ""}`}>
+      {/* Rolling ticker banner — new open tickets */}
+      {newOpenTickets.length > 0 && (
+        <div className="fixed top-0 left-0 right-0 z-[60] flex items-center h-9 bg-red-950 border-b border-red-800 overflow-hidden shadow-lg">
+          {/* Fixed label */}
+          <div className="flex items-center gap-2 px-4 h-full bg-red-900 border-r border-red-700 shrink-0">
+            <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
+            <span className="text-red-200 text-xs font-bold uppercase tracking-widest whitespace-nowrap">
+              {newOpenTickets.length} New Open Ticket{newOpenTickets.length > 1 ? "s" : ""}
+            </span>
+          </div>
+          {/* Scrolling ticker */}
+          <div className="flex-1 overflow-hidden relative h-full flex items-center">
+            <div className="animate-marquee flex items-center gap-10">
+              {newOpenTickets.map((t) => (
+                <span key={t.ticketNo} className="flex items-center gap-2 text-xs">
+                  <span className="text-blue-300 font-mono font-semibold">{t.ticketNo}</span>
+                  <span className="text-red-400">·</span>
+                  <span className="text-red-100">{t.project}</span>
+                  {t.subject && (
+                    <>
+                      <span className="text-red-700">—</span>
+                      <span className="text-red-300">{t.subject}</span>
+                    </>
+                  )}
+                </span>
+              ))}
+              {/* Duplicate for seamless loop */}
+              {newOpenTickets.map((t) => (
+                <span key={`dup-${t.ticketNo}`} className="flex items-center gap-2 text-xs">
+                  <span className="text-blue-300 font-mono font-semibold">{t.ticketNo}</span>
+                  <span className="text-red-400">·</span>
+                  <span className="text-red-100">{t.project}</span>
+                  {t.subject && (
+                    <>
+                      <span className="text-red-700">—</span>
+                      <span className="text-red-300">{t.subject}</span>
+                    </>
+                  )}
+                </span>
+              ))}
+            </div>
+          </div>
+          {/* Dismiss */}
+          <button
+            onClick={() => setNewOpenTickets([])}
+            className="px-4 h-full text-red-400 hover:text-white hover:bg-red-800 transition shrink-0 text-lg leading-none border-l border-red-800"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
+      {/* New open ticket popup modal */}
+      {showNewTicketModal && newOpenTickets.length > 0 && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center px-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowNewTicketModal(false)} />
+          <div className="relative w-full max-w-md bg-gray-900 border border-red-700 rounded-2xl shadow-2xl overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 bg-red-950/70 border-b border-red-800">
+              <div className="flex items-center gap-3">
+                <span className="w-3 h-3 rounded-full bg-red-400 animate-pulse shrink-0" />
+                <div>
+                  <p className="text-white font-bold text-sm">New Open Ticket{newOpenTickets.length > 1 ? "s" : ""} Received</p>
+                  <p className="text-red-400 text-xs">{newOpenTickets.length} ticket{newOpenTickets.length > 1 ? "s" : ""} need{newOpenTickets.length === 1 ? "s" : ""} attention</p>
+                </div>
+              </div>
+              <button onClick={() => setShowNewTicketModal(false)} className="text-red-400 hover:text-white transition text-2xl leading-none">×</button>
+            </div>
+
+            {/* Ticket list */}
+            <div className="divide-y divide-gray-800 max-h-80 overflow-y-auto">
+              {newOpenTickets.map((t) => {
+                const tag = getProjectTag(t.project, tagMap);
+                return (
+                  <div key={t.ticketNo} className="px-5 py-3.5 hover:bg-gray-800/40 transition">
+                    <div className="flex items-start justify-between gap-3 mb-1">
+                      <span className="text-blue-400 font-mono text-sm font-semibold">{t.ticketNo}</span>
+                      {tag && <TagBadge tag={tag} />}
+                    </div>
+                    <p className="text-gray-200 text-sm break-words">{t.project}</p>
+                    {t.subject && <p className="text-gray-500 text-xs mt-0.5 break-words">{t.subject}</p>}
+                    <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-600">
+                      {t.createdDate && <span>Created: {t.createdDate}</span>}
+                      {t.severity && <span className={SEV_CLS[normalizeSeverity(t.severity)] ?? "text-gray-500"}>{t.severity}</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 py-3 border-t border-gray-800 flex gap-2">
+              <button
+                onClick={() => setShowNewTicketModal(false)}
+                className="flex-1 py-2 text-sm rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 transition"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => { setShowNewTicketModal(false); setNewOpenTickets([]); }}
+                className="flex-1 py-2 text-sm rounded-lg bg-red-700/40 hover:bg-red-700/70 text-red-300 border border-red-700 transition"
+              >
+                Dismiss All
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showTagManager && (
         <TagManager
           projects={allProjects}
@@ -1417,6 +1568,25 @@ export default function Dashboard() {
           </div>
           <div className="flex items-center gap-3 shrink-0">
             {cache && <Countdown nextAt={nextAt} />}
+
+            {/* Browser notification permission toggle */}
+            {notifPermission !== "unsupported" && notifPermission !== "granted" && (
+              <button
+                onClick={async () => {
+                  const result = await Notification.requestPermission();
+                  setNotifPermission(result);
+                }}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-yellow-600/20 border border-yellow-700
+                           text-yellow-400 hover:bg-yellow-600/40 transition"
+                title="Enable desktop notifications for new open tickets"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                </svg>
+                Enable Alerts
+              </button>
+            )}
 
             <TicketLocator />
 
