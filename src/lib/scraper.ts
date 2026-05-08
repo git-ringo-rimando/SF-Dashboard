@@ -268,7 +268,7 @@ async function extractTicketList(page: Page, targetDateFrom?: string): Promise<R
             .map((n) => n.textContent?.trim() ?? "")
             .filter(Boolean)
             .join(" ");
-          return full || cell.textContent?.trim() ?? "";
+          return full || (cell.textContent?.trim() ?? "");
         }
 
         document.querySelectorAll("table tbody tr").forEach((tr) => {
