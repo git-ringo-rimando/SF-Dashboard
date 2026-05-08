@@ -55,7 +55,7 @@ async function safeGoto(page: Page, url: string, timeout = 120000): Promise<void
 
 /** Navigate and wait for a selector; if the selector never appears (e.g. empty
  *  table) we settle for 3 extra seconds instead of throwing. */
-async function gotoAndWait(page: Page, url: string, selector: string, timeout = 45000) {
+async function gotoAndWait(page: Page, url: string, selector: string, timeout = 90000) {
   await safeGoto(page, url);
   await page.waitForSelector(selector, { timeout }).catch(() =>
     new Promise<void>((r) => setTimeout(r, 3000))
@@ -289,12 +289,24 @@ function toDateOnlyServer(s: string): string | null {
 
 // ── Ticket list with fast pagination ─────────────────────────────────────────
 
+/** Wait until the ticket list table has at least one row with a non-empty
+ *  ticket number cell — this ensures Angular has finished loading the data,
+ *  not just rendered empty placeholder rows. */
+async function waitForTicketData(page: Page, timeout = 90000): Promise<void> {
+  await page.waitForFunction(
+    () => {
+      const cell = document.querySelector("table tbody tr td:nth-child(2)");
+      return !!cell && (cell.textContent?.trim().length ?? 0) > 0;
+    },
+    { timeout }
+  ).catch(() => {});
+}
+
 async function extractTicketList(page: Page, targetDateFrom?: string): Promise<RecentTicket[]> {
   if (!page.url().includes("/app/ticket/list")) {
-    await gotoAndWait(page, `${BASE}/app/ticket/list`, "table tbody tr");
-  } else {
-    await page.waitForSelector("table tbody tr", { timeout: 20000 }).catch(() => {});
+    await safeGoto(page, `${BASE}/app/ticket/list`);
   }
+  await waitForTicketData(page);
 
   const all: RecentTicket[] = [];
   const MAX_PAGES = targetDateFrom ? 200 : 75;
@@ -346,7 +358,7 @@ async function extractTicketList(page: Page, targetDateFrom?: string): Promise<R
       const msg = String(e);
       if (msg.includes("detached Frame") || msg.includes("Execution context was destroyed")) {
         await new Promise((r) => setTimeout(r, 1500));
-        await page.waitForSelector("table tbody tr", { timeout: 15000 }).catch(() => {});
+        await waitForTicketData(page, 15000);
         continue;
       }
       throw e;
@@ -611,6 +623,10 @@ export async function scrapeTicketDetail(
 
 // ── Auth guard ────────────────────────────────────────────────────────────────
 
+function isLoginUrl(url: string) {
+  return url.includes("/login") || url.includes("/sign-in");
+}
+
 async function ensureAuthenticated(
   page: Page,
   username: string,
@@ -618,15 +634,19 @@ async function ensureAuthenticated(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   await safeGoto(page, `${BASE}/app/ticket/list`);
 
-  // Detect redirect to login page
-  const onLogin = page.url().includes("/login") || page.url().includes("/sign-in")
-    || !!(await page.$('input[type="password"]'));
-  if (onLogin) return doLogin(page, username, password);
+  // Angular boots after domcontentloaded and may redirect to login — wait for
+  // either the ticket table OR the password field, whichever appears first.
+  await page.waitForFunction(
+    () => !!document.querySelector("table tbody tr, input[type='password']"),
+    { timeout: 90000 }
+  ).catch(() => {});
 
-  // Wait for ticket rows; if the page is slow or empty, give Angular time to settle
-  await page.waitForSelector("table tbody tr", { timeout: 45000 }).catch(() =>
-    new Promise<void>((r) => setTimeout(r, 3000))
-  );
+  const landed = page.url();
+
+  if (isLoginUrl(landed) || !!(await page.$('input[type="password"]'))) {
+    return doLogin(page, username, password);
+  }
+
   return { ok: true };
 }
 
