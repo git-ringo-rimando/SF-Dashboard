@@ -92,11 +92,11 @@ function getPresetDates(preset: string): { from: string; to: string } {
   const todayStr = toInputDate(today);
   const offset = (n: number) => { const d = new Date(today); d.setDate(today.getDate() + n); return toInputDate(d); };
 
-  // Work day = 5:31 PM (D-1) → 5:30 PM (D).
-  // Before 5:31 PM: current work day spans [yesterday, today].
-  // At/after 5:31 PM: new work day just started, spans [today, today].
+  // Work day = 5:30 PM (D-1) → 5:29 PM (D).
+  // Before 5:30PM: current work day spans [yesterday, today].
+  // At/after 5:30PM: new work day just started, spans [today, today].
   const h = now.getHours(), m = now.getMinutes();
-  const pastCutoff = h > 17 || (h === 17 && m >= 31);
+  const pastCutoff = h > 17 || (h === 17 && m >= 30);
 
   switch (preset) {
     case "today":
@@ -195,7 +195,6 @@ function autoDetectTag(project: string): ProductTag | null {
   const p = project.toLowerCase();
   if (p.includes("sunfish 7") || p.includes("sunfish7") || p.includes("sunfish hcm")) return "Sunfish 7";
   if (p.includes("sunfish 6") || p.includes("sunfish6") || p.includes("sunfish hr product")) return "Sunfish 6";
-  if (p.includes("greatday")) return "Greatday";
   return null;
 }
 
