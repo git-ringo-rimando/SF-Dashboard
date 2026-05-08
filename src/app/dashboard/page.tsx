@@ -766,8 +766,18 @@ function RecentTable({ rows, tagMap = {} }: { rows: RecentTicket[]; tagMap?: Tag
                   <td className="px-4 py-2.5 text-gray-400 whitespace-nowrap">{r.module || "—"}</td>
                   <td className="px-4 py-2.5 text-gray-200 break-words min-w-[200px]">{r.subject}</td>
                   <td className={`px-4 py-2.5 whitespace-nowrap font-medium ${SEV_CLS[normalizeSeverity(r.severity)] ?? "text-gray-400"}`}>{r.severity}</td>
-                  <td className="px-4 py-2.5 text-gray-400 whitespace-nowrap text-xs">{r.createdDate}</td>
-                  <td className="px-4 py-2.5 text-gray-400 whitespace-nowrap text-xs">{r.fixedDate || "—"}</td>
+                  <td className="px-4 py-2.5 whitespace-nowrap text-xs">
+                    <span className="text-gray-400">{r.createdDate?.split(" ")[0] ?? "—"}</span>
+                    {r.createdDate?.includes(" ") && (
+                      <span className="block text-gray-600">{r.createdDate.split(" ").slice(1).join(" ")}</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2.5 whitespace-nowrap text-xs">
+                    <span className="text-gray-400">{r.fixedDate?.split(" ")[0] || "—"}</span>
+                    {r.fixedDate?.includes(" ") && (
+                      <span className="block text-gray-600">{r.fixedDate.split(" ").slice(1).join(" ")}</span>
+                    )}
+                  </td>
                   <td className="px-4 py-2.5 whitespace-nowrap"><StatusBadge s={r.status} /></td>
                 </tr>
               ))}
