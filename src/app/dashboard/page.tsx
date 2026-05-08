@@ -92,10 +92,11 @@ function getPresetDates(preset: string): { from: string; to: string } {
   const todayStr = toInputDate(today);
   const offset = (n: number) => { const d = new Date(today); d.setDate(today.getDate() + n); return toInputDate(d); };
 
-  // Work day = 6:00 PM (D-1) → 5:59 PM (D).
-  // Before 6PM: current work day spans [yesterday, today].
-  // At/after 6PM: new work day just started, spans [today, today].
-  const pastCutoff = now.getHours() >= 18;
+  // Work day = 5:31 PM (D-1) → 5:30 PM (D).
+  // Before 5:31 PM: current work day spans [yesterday, today].
+  // At/after 5:31 PM: new work day just started, spans [today, today].
+  const h = now.getHours(), m = now.getMinutes();
+  const pastCutoff = h > 17 || (h === 17 && m >= 31);
 
   switch (preset) {
     case "today":
@@ -1569,22 +1570,32 @@ export default function Dashboard() {
           <div className="flex items-center gap-3 shrink-0">
             {cache && <Countdown nextAt={nextAt} />}
 
-            {/* Browser notification permission toggle */}
-            {notifPermission !== "unsupported" && notifPermission !== "granted" && (
+            {/* Browser notification permission — always visible */}
+            {notifPermission !== "unsupported" && (
               <button
                 onClick={async () => {
+                  if (notifPermission === "denied") return;
                   const result = await Notification.requestPermission();
                   setNotifPermission(result);
                 }}
-                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-yellow-600/20 border border-yellow-700
-                           text-yellow-400 hover:bg-yellow-600/40 transition"
-                title="Enable desktop notifications for new open tickets"
+                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition ${
+                  notifPermission === "granted"
+                    ? "bg-green-600/20 border-green-700 text-green-400 cursor-default"
+                    : notifPermission === "denied"
+                    ? "bg-red-600/20 border-red-700 text-red-400 cursor-not-allowed"
+                    : "bg-yellow-600/20 border-yellow-700 text-yellow-400 hover:bg-yellow-600/40 cursor-pointer"
+                }`}
+                title={
+                  notifPermission === "granted" ? "Desktop notifications are enabled" :
+                  notifPermission === "denied"  ? "Notifications blocked — unblock in browser site settings" :
+                  "Enable desktop notifications for new open tickets"
+                }
               >
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                     d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                 </svg>
-                Enable Alerts
+                {notifPermission === "granted" ? "Alerts On" : notifPermission === "denied" ? "Alerts Blocked" : "Enable Alerts"}
               </button>
             )}
 
