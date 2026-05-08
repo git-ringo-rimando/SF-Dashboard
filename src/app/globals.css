@@ -1,12 +1,12 @@
 @import "tailwindcss";
 
 @keyframes marquee {
-  0%   { transform: translateX(100vw); }
-  100% { transform: translateX(-100%); }
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
 }
 
 .animate-marquee {
   display: inline-flex;
-  animation: marquee 25s linear infinite;
+  animation: marquee 200s linear infinite;
   white-space: nowrap;
 }
