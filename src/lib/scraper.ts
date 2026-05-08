@@ -31,10 +31,13 @@ async function getBrowser(): Promise<Browser> {
   }));
 }
 
-/** Navigate and wait until a selector appears — faster than networkidle2. */
+/** Navigate then wait for a selector; if the selector never appears (e.g. empty
+ *  table, slow Angular render) we settle for 3 extra seconds instead of throwing. */
 async function gotoAndWait(page: Page, url: string, selector: string, timeout = 45000) {
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
-  await page.waitForSelector(selector, { timeout });
+  await page.waitForSelector(selector, { timeout }).catch(() =>
+    new Promise<void>((r) => setTimeout(r, 3000))
+  );
 }
 
 /** Retry a page.evaluate() call if Angular destroys the execution context mid-flight. */
@@ -168,7 +171,7 @@ async function extractPartnerDashboard(page: Page): Promise<{
   unresolvedCount: number;
   unrespondedCount: number;
 }> {
-  await gotoAndWait(page, `${BASE}/app/partner-dashboard`, "table tbody tr");
+  await gotoAndWait(page, `${BASE}/app/partner-dashboard`, "table");
 
   return retryOnDetach(() => page.evaluate(() => {
     const periodMatch = document.body.innerText.match(/PERIODE\s+([\d\w\s]+TO[\d\w\s]+)/i);
@@ -196,7 +199,7 @@ async function extractStatistics(page: Page): Promise<{
   severityBreakdown: SeverityRow[];
   totals: DashboardCache["totals"];
 }> {
-  await gotoAndWait(page, `${BASE}/app/ticket/statistic`, "table tbody tr");
+  await gotoAndWait(page, `${BASE}/app/ticket/statistic`, "table");
 
   return retryOnDetach(() => page.evaluate(() => {
     const num = (s: string | undefined) => parseInt(s ?? "0") || 0;
@@ -420,7 +423,7 @@ export async function scrapeTicketDetail(
     // Fallback B: find the ticket link in the partner dashboard tables and click it
     // Fallback B: partner dashboard — grab the href from the row link directly
     if (!navigated) {
-      await gotoAndWait(page, `${BASE}/app/partner-dashboard`, "table tbody tr");
+      await gotoAndWait(page, `${BASE}/app/partner-dashboard`, "table");
       const rowHref = await page.evaluate((tNo: string) => {
         for (const row of document.querySelectorAll("table tbody tr")) {
           const cells = [...row.querySelectorAll("td")];
@@ -591,19 +594,18 @@ async function ensureAuthenticated(
   username: string,
   password: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  try {
-    await gotoAndWait(page, `${BASE}/app/ticket/list`, "table tbody tr", 20000);
-    return { ok: true };
-  } catch {
-    const onLoginPage = !!(await page.$('input[type="password"]'));
-    if (onLoginPage) return doLogin(page, username, password);
-    try {
-      await page.waitForSelector("table tbody tr", { timeout: 30000 });
-      return { ok: true };
-    } catch {
-      return doLogin(page, username, password);
-    }
-  }
+  await page.goto(`${BASE}/app/ticket/list`, { waitUntil: "domcontentloaded", timeout: 60000 });
+
+  // Detect redirect to login page
+  const onLogin = page.url().includes("/login") || page.url().includes("/sign-in")
+    || !!(await page.$('input[type="password"]'));
+  if (onLogin) return doLogin(page, username, password);
+
+  // Wait for ticket rows; if the page is slow or empty, give Angular time to settle
+  await page.waitForSelector("table tbody tr", { timeout: 45000 }).catch(() =>
+    new Promise<void>((r) => setTimeout(r, 3000))
+  );
+  return { ok: true };
 }
 
 // ── Created-time enrichment ───────────────────────────────────────────────────
