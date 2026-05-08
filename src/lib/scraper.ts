@@ -21,10 +21,12 @@ async function getBrowser(): Promise<Browser> {
       activeBrowser = null;
     }
   }
+  const executablePath = process.env.CHROMIUM_PATH ?? undefined;
   return (activeBrowser = await puppeteer.launch({
     headless: true,
+    executablePath,
     args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
-    protocolTimeout: 300_000, // 5 min — prevents CDP callFunctionOn timeouts on large pages
+    protocolTimeout: 300_000,
   }));
 }
 
