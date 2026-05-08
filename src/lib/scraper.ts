@@ -584,6 +584,53 @@ async function ensureAuthenticated(
   }
 }
 
+// ── Created-time enrichment ───────────────────────────────────────────────────
+
+async function fetchCreatedTime(page: Page, ticketNo: string): Promise<string | null> {
+  const url = `${BASE}/app/ticket/forms/${ticketNo}`;
+  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => {});
+  await new Promise((r) => setTimeout(r, 2000));
+
+  return page.evaluate(() => {
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z]/g, "");
+    const KEYS = ["createddate", "createdate", "datecreated", "creationdate", "created"];
+    const candidates = [
+      ...document.querySelectorAll("label, .ui-outputlabel, th, dt, td"),
+    ];
+    for (const el of candidates) {
+      if (!KEYS.includes(norm(el.textContent ?? ""))) continue;
+      // Try sibling / next cell / parent's next sibling for the value
+      const valueEl =
+        el.nextElementSibling ??
+        el.parentElement?.nextElementSibling?.querySelector("td, span, input") ??
+        null;
+      if (!valueEl) continue;
+      const val =
+        (valueEl as HTMLInputElement).value?.trim() ||
+        valueEl.getAttribute("title")?.trim() ||
+        valueEl.textContent?.trim() ||
+        "";
+      // Must look like a date with time (contains digits and colon)
+      if (val && /\d/.test(val) && /:/.test(val)) return val;
+    }
+    return null;
+  });
+}
+
+// Run an async function over an array with at most `concurrency` parallel tasks
+async function pLimit<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = [];
+  for (let i = 0; i < items.length; i += concurrency) {
+    const batch = items.slice(i, i + concurrency);
+    results.push(...await Promise.all(batch.map(fn)));
+  }
+  return results;
+}
+
 // ── Main export ───────────────────────────────────────────────────────────────
 
 export async function scrape(username: string, password: string, targetDateFrom?: string): Promise<void> {
@@ -614,6 +661,18 @@ export async function scrape(username: string, password: string, targetDateFrom?
       runOnNewPage(browser, cookies, extractPartnerDashboard),
       runOnNewPage(browser, cookies, extractStatistics),
     ]);
+
+    // Enrich creation times for the first 20 tickets (most recent page) by
+    // visiting each detail page in batches of 5 parallel pages.
+    const firstPage = recentTickets.slice(0, 20);
+    const times = await pLimit(firstPage, 5, (t) =>
+      runOnNewPage(browser, cookies, (p) => fetchCreatedTime(p, t.ticketNo))
+    );
+    const timeMap = new Map(firstPage.map((t, i) => [t.ticketNo, times[i]]));
+    for (const ticket of recentTickets) {
+      const t = timeMap.get(ticket.ticketNo);
+      if (t) ticket.createdDate = t;
+    }
 
     saveCache({
       ...empty,
