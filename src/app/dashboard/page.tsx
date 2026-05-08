@@ -1123,6 +1123,34 @@ export default function Dashboard() {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const openModalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const newModalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastActivityRef = useRef(Date.now());
+
+  // Reset inactivity timer on any user interaction
+  useEffect(() => {
+    const reset = () => { lastActivityRef.current = Date.now(); };
+    window.addEventListener("mousemove", reset);
+    window.addEventListener("keydown", reset);
+    window.addEventListener("click", reset);
+    window.addEventListener("scroll", reset, true);
+    return () => {
+      window.removeEventListener("mousemove", reset);
+      window.removeEventListener("keydown", reset);
+      window.removeEventListener("click", reset);
+      window.removeEventListener("scroll", reset, true);
+    };
+  }, []);
+
+  // Sign out after 120 minutes of inactivity
+  useEffect(() => {
+    const TIMEOUT_MS = 120 * 60 * 1000;
+    const id = setInterval(async () => {
+      if (Date.now() - lastActivityRef.current >= TIMEOUT_MS) {
+        await fetch("/api/auth", { method: "DELETE" }).catch(() => {});
+        router.replace("/");
+      }
+    }, 60_000);
+    return () => clearInterval(id);
+  }, [router]);
 
   // Auto-close open tickets modal after 4 minutes
   useEffect(() => {

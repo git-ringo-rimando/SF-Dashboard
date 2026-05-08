@@ -30,10 +30,11 @@ export async function DELETE() {
   try {
     const fs = await import("fs");
     const path = await import("path");
-    const credsFile = path.join(process.cwd(), "data", "credentials.enc");
-    if (fs.existsSync(credsFile)) fs.unlinkSync(credsFile);
-    const cacheFile = path.join(process.cwd(), "data", "cache.json");
-    if (fs.existsSync(cacheFile)) fs.unlinkSync(cacheFile);
+    const DATA_DIR = process.env.DATA_DIR ?? path.join(process.cwd(), "data");
+    for (const file of ["credentials.enc", "cache.json", "tags.json"]) {
+      const p = path.join(DATA_DIR, file);
+      if (fs.existsSync(p)) fs.unlinkSync(p);
+    }
   } catch {}
   return NextResponse.json({ ok: true });
 }
