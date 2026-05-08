@@ -1475,7 +1475,7 @@ export default function Dashboard() {
             className="flex items-center gap-2 px-4 h-full bg-red-950/80 border-r border-red-800 shrink-0 hover:bg-red-900/80 transition"
           >
             <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
-            <span className="text-red-200 text-xs font-bold uppercase tracking-widest whitespace-nowrap">
+            <span className="text-red-200 text-[15px] font-bold uppercase tracking-widest whitespace-nowrap">
               {bannerTickets.length} Open
             </span>
           </button>
@@ -1485,13 +1485,13 @@ export default function Dashboard() {
               {[...bannerTickets, ...bannerTickets].map((ticket, i) => {
                 const tag = getProjectTag(ticket.project, tagMap);
                 return (
-                  <span key={i} className="flex items-center gap-2 text-xs px-6">
+                  <span key={i} className="flex items-center gap-2 text-[15px] px-6">
                     {tag ? (
-                      <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold ${TAG_BANNER_CLS[tag]}`}>
+                      <span className={`inline-flex px-2 py-0.5 rounded text-[15px] font-bold ${TAG_BANNER_CLS[tag]}`}>
                         {tag}
                       </span>
                     ) : (
-                      <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-gray-700 text-gray-400 border border-gray-600">
+                      <span className="inline-flex px-2 py-0.5 rounded text-[15px] font-bold bg-gray-700 text-gray-400 border border-gray-600">
                         Untagged
                       </span>
                     )}
