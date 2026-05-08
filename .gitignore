@@ -6,7 +6,9 @@ node_modules/
 out/
 
 # Data folder — contains encrypted credentials and scraped cache (never commit)
-data/
+/data/
+# Un-ignore the API route that lives inside src/app/api/data/
+!src/app/api/data/
 
 # Environment files
 .env

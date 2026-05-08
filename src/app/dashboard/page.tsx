@@ -1147,24 +1147,14 @@ export default function Dashboard() {
     const json = await res.json();
     if (!json.hasCreds) { router.replace("/"); return; }
     setCache(json.cache);
+    if (json.username) setUsername(json.username);
+    if (json.tags) setTagMap(json.tags);
     setLoading(false);
     if (!hasShownInitialModalRef.current && json.cache?.recentTickets?.some((t: RecentTicket) => t.status === "Open")) {
       hasShownInitialModalRef.current = true;
       setShowOpenTicketsModal(true);
     }
   }, [router]);
-
-  // Fetch username once on mount
-  useEffect(() => {
-    fetch("/api/auth")
-      .then((r) => r.json())
-      .then((d) => setUsername(d.username ?? null))
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    fetch("/api/tags").then((r) => r.json()).then(setTagMap).catch(() => {});
-  }, []);
 
   // Sync notification permission state
   useEffect(() => {
@@ -1223,7 +1213,9 @@ export default function Dashboard() {
       const res  = await fetch("/api/data");
       const json = await res.json();
       if (json.cache?.scrapedAt !== before) {
-        setCache(json.cache); setScraping(false); setNextAt(Date.now() + REFRESH_MS);
+        setCache(json.cache);
+        if (json.tags) setTagMap(json.tags);
+        setScraping(false); setNextAt(Date.now() + REFRESH_MS);
       } else setTimeout(poll, 4000);
     };
     setTimeout(poll, 4000);
@@ -1861,7 +1853,9 @@ export default function Dashboard() {
                     const res  = await fetch("/api/data");
                     const json = await res.json();
                     if (json.cache?.scrapedAt !== before) {
-                      setCache(json.cache); setScraping(false); setNextAt(Date.now() + REFRESH_MS);
+                      setCache(json.cache);
+                      if (json.tags) setTagMap(json.tags);
+                      setScraping(false); setNextAt(Date.now() + REFRESH_MS);
                     } else setTimeout(poll, 4000);
                   };
                   setTimeout(poll, 4000);

@@ -37,6 +37,27 @@ async function gotoAndWait(page: Page, url: string, selector: string, timeout = 
   await page.waitForSelector(selector, { timeout });
 }
 
+/** Retry a page.evaluate() call if Angular destroys the execution context mid-flight. */
+async function retryOnDetach<T>(fn: () => Promise<T>, page: Page, retries = 3): Promise<T> {
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      const msg = String(e);
+      if (
+        (msg.includes("detached Frame") || msg.includes("Execution context was destroyed")) &&
+        attempt < retries - 1
+      ) {
+        await page.waitForSelector("body", { timeout: 10000 }).catch(() => {});
+        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw new Error("retryOnDetach: failed after all retries");
+}
+
 /** Run a scrape function on a fresh page sharing the same session cookies. */
 async function runOnNewPage<T>(
   browser: Browser,
@@ -149,7 +170,7 @@ async function extractPartnerDashboard(page: Page): Promise<{
 }> {
   await gotoAndWait(page, `${BASE}/app/partner-dashboard`, "table tbody tr");
 
-  return page.evaluate(() => {
+  return retryOnDetach(() => page.evaluate(() => {
     const periodMatch = document.body.innerText.match(/PERIODE\s+([\d\w\s]+TO[\d\w\s]+)/i);
     const period = periodMatch ? periodMatch[1].trim() : "";
     const tables = [...document.querySelectorAll("table")];
@@ -166,7 +187,7 @@ async function extractPartnerDashboard(page: Page): Promise<{
     const t0 = tables[0] ? parseTable(tables[0]) : [];
     const t1 = tables[1] ? parseTable(tables[1]) : [];
     return { period, unresolvedTickets: t0, unrespondedTickets: t1, unresolvedCount: t0.length, unrespondedCount: t1.length };
-  });
+  }), page);
 }
 
 async function extractStatistics(page: Page): Promise<{
@@ -177,7 +198,7 @@ async function extractStatistics(page: Page): Promise<{
 }> {
   await gotoAndWait(page, `${BASE}/app/ticket/statistic`, "table tbody tr");
 
-  return page.evaluate(() => {
+  return retryOnDetach(() => page.evaluate(() => {
     const num = (s: string | undefined) => parseInt(s ?? "0") || 0;
     const periodInput =
       (document.querySelector('input[type="text"]') as HTMLInputElement)?.value ??
@@ -221,7 +242,7 @@ async function extractStatistics(page: Page): Promise<{
     }
 
     return { period: periodInput, moduleBreakdown: moduleRows, severityBreakdown: severityRows, totals };
-  });
+  }), page);
 }
 
 // ── Date helper (server-side) ─────────────────────────────────────────────────
@@ -299,6 +320,7 @@ async function extractTicketList(page: Page, targetDateFrom?: string): Promise<R
     } catch (e) {
       const msg = String(e);
       if (msg.includes("detached Frame") || msg.includes("Execution context was destroyed")) {
+        await new Promise((r) => setTimeout(r, 1500));
         await page.waitForSelector("table tbody tr", { timeout: 15000 }).catch(() => {});
         continue;
       }
