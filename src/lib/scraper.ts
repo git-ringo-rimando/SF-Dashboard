@@ -31,10 +31,32 @@ async function getBrowser(): Promise<Browser> {
   }));
 }
 
-/** Navigate then wait for a selector; if the selector never appears (e.g. empty
- *  table, slow Angular render) we settle for 3 extra seconds instead of throwing. */
+/** page.goto with retry on navigation timeout or transient network errors.
+ *  Uses "commit" so it resolves on first byte — the caller then waits for
+ *  a selector, which is more reliable on slow connections than waiting for
+ *  the full domcontentloaded event chain to complete within a deadline. */
+async function safeGoto(page: Page, url: string, timeout = 120000): Promise<void> {
+  const RETRYABLE = /Navigation timeout|net::ERR_|TimeoutError/i;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await page.goto(url, { waitUntil: "commit", timeout });
+      return;
+    } catch (e) {
+      const msg = String(e);
+      if (RETRYABLE.test(msg) && attempt < 3) {
+        console.log(`[goto] attempt ${attempt} timed out for ${url}, retrying…`);
+        await new Promise((r) => setTimeout(r, 3000 * attempt));
+        continue;
+      }
+      throw e;
+    }
+  }
+}
+
+/** Navigate and wait for a selector; if the selector never appears (e.g. empty
+ *  table) we settle for 3 extra seconds instead of throwing. */
 async function gotoAndWait(page: Page, url: string, selector: string, timeout = 45000) {
-  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 120000 });
+  await safeGoto(page, url);
   await page.waitForSelector(selector, { timeout }).catch(() =>
     new Promise<void>((r) => setTimeout(r, 3000))
   );
@@ -120,7 +142,7 @@ async function doLogin(
   await cdp.send("Network.clearBrowserCookies");
   await cdp.detach();
 
-  await page.goto(BASE, { waitUntil: "domcontentloaded", timeout: 120000 });
+  await safeGoto(page, BASE);
 
   try {
     await page.waitForSelector('input[type="password"]', { timeout: 120000 });
@@ -379,7 +401,7 @@ export async function scrapeTicketDetail(
     // domcontentloaded fires before Angular routes; networkidle2 is too slow on
     // data-heavy pages. A short fixed wait is the right tradeoff here.
     const directUrl = `${BASE}/app/ticket/forms/${ticketNo}`;
-    await page.goto(directUrl, { waitUntil: "domcontentloaded", timeout: 60000 }).catch(() => {});
+    await safeGoto(page, directUrl).catch(() => {});
     await new Promise((r) => setTimeout(r, 2500)); // let Angular router finish
 
     // After networkidle2 the URL reflects Angular's final route
@@ -400,7 +422,7 @@ export async function scrapeTicketDetail(
           if (await page.$('input[type="password"]'))
             return { error: "Invalid username or password." };
         }
-        await page.goto(directUrl, { waitUntil: "domcontentloaded", timeout: 60000 }).catch(() => {});
+        await safeGoto(page, directUrl).catch(() => {});
         await new Promise((r) => setTimeout(r, 2500));
       }
     }
@@ -414,7 +436,7 @@ export async function scrapeTicketDetail(
         `${BASE}/app/ticket/detail/${ticketNo}`,
         `${BASE}/app/ticket/view/${ticketNo}`,
       ]) {
-        await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 }).catch(() => {});
+        await safeGoto(page, url).catch(() => {});
         await new Promise((r) => setTimeout(r, 2000));
         if (page.url().includes(ticketNo)) { navigated = true; break; }
       }
@@ -436,7 +458,7 @@ export async function scrapeTicketDetail(
       }, ticketNo);
 
       if (rowHref && rowHref !== "ROW") {
-        await page.goto(rowHref, { waitUntil: "domcontentloaded", timeout: 60000 }).catch(() => {});
+        await safeGoto(page, rowHref).catch(() => {});
         await new Promise((r) => setTimeout(r, 2000));
         navigated = page.url().includes(ticketNo);
       } else if (rowHref === "ROW") {
@@ -594,7 +616,7 @@ async function ensureAuthenticated(
   username: string,
   password: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  await page.goto(`${BASE}/app/ticket/list`, { waitUntil: "domcontentloaded", timeout: 120000 });
+  await safeGoto(page, `${BASE}/app/ticket/list`);
 
   // Detect redirect to login page
   const onLogin = page.url().includes("/login") || page.url().includes("/sign-in")
@@ -613,7 +635,7 @@ async function ensureAuthenticated(
 async function fetchCreatedTime(page: Page, ticketNo: string): Promise<string | null> {
   try {
   const url = `${BASE}/app/ticket/forms/${ticketNo}`;
-  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 }).catch(() => {});
+  await safeGoto(page, url).catch(() => {});
   await new Promise((r) => setTimeout(r, 2000));
 
   return await page.evaluate(() => {
