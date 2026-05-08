@@ -700,7 +700,7 @@ export async function scrape(username: string, password: string, targetDateFrom?
       if (t) ticket.createdDate = t;
     }
 
-    saveCache({
+    await saveCache({
       ...empty,
       totals: { ...statData.totals, unresolved: partnerData.unresolvedCount, unresponded: partnerData.unrespondedCount },
       statisticPeriod: statData.period,
@@ -712,7 +712,7 @@ export async function scrape(username: string, password: string, targetDateFrom?
       recentTickets,
     });
   } catch (e) {
-    saveCache({ ...empty, error: e instanceof Error ? e.message : String(e) });
+    await saveCache({ ...empty, error: e instanceof Error ? e.message : String(e) });
   } finally {
     await page.close();
   }

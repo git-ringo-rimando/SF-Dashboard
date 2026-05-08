@@ -7,7 +7,7 @@ export async function GET(req: NextRequest) {
   const ticketNo = req.nextUrl.searchParams.get("ticketNo")?.trim();
   if (!ticketNo) return NextResponse.json({ error: "ticketNo required" }, { status: 400 });
 
-  const cache = loadCache();
+  const cache = await loadCache();
   if (!cache) return NextResponse.json({ cached: null });
 
   const inRecent      = cache.recentTickets.find((t) => t.ticketNo === ticketNo) ?? null;
