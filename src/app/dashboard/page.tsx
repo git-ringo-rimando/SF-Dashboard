@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import type { DashboardCache, TicketRow, ModuleRow, SeverityRow, RecentTicket, ProductTag, TagMap } from "@/lib/store";
 
-const REFRESH_MS = 10 * 60 * 1000;
+const REFRESH_MS = 5 * 60 * 1000;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

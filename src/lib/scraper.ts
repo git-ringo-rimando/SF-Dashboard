@@ -71,9 +71,9 @@ async function fillLoginForm(page: Page, username: string, password: string): Pr
   if (!userField || !passField) return false;
 
   await userField.click({ clickCount: 3 });
-  await userField.type(username, { delay: 40 });
+  await userField.type(username, { delay: 20 });
   await passField.click({ clickCount: 3 });
-  await passField.type(password, { delay: 40 });
+  await passField.type(password, { delay: 20 });
 
   const submitted = await page.evaluate(() => {
     const btn = [...document.querySelectorAll("button")].find(
@@ -96,7 +96,7 @@ async function doLogin(
   await cdp.send("Network.clearBrowserCookies");
   await cdp.detach();
 
-  await page.goto(BASE, { waitUntil: "networkidle2", timeout: 90000 });
+  await page.goto(BASE, { waitUntil: "domcontentloaded", timeout: 60000 });
 
   try {
     await page.waitForSelector('input[type="password"]', { timeout: 60000 });
