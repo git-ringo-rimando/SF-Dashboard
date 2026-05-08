@@ -22,10 +22,11 @@ async function getBrowser(): Promise<Browser> {
     }
   }
   const executablePath = process.env.CHROMIUM_PATH ?? undefined;
+  console.log("[browser] launching chromium:", executablePath ?? "puppeteer default");
   return (activeBrowser = await puppeteer.launch({
     headless: true,
     executablePath,
-    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--single-process"],
     protocolTimeout: 300_000,
   }));
 }
