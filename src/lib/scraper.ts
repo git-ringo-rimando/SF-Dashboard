@@ -233,7 +233,7 @@ function toDateOnlyServer(s: string): string | null {
     Jan:"01",Feb:"02",Mar:"03",Apr:"04",May:"05",Jun:"06",
     Jul:"07",Aug:"08",Sep:"09",Oct:"10",Nov:"11",Dec:"12",
   };
-  const m = s.match(/^(\d{1,2})-([A-Za-z]{3})[a-z]*-(\d{4})$/i);
+  const m = s.match(/^(\d{1,2})-([A-Za-z]{3})[a-z]*-(\d{4})/i);
   if (m) {
     const mon = M[m[2].charAt(0).toUpperCase() + m[2].slice(1, 3).toLowerCase()];
     if (mon) return `${m[3]}-${mon}-${m[1].padStart(2, "0")}`;
@@ -259,6 +259,18 @@ async function extractTicketList(page: Page, targetDateFrom?: string): Promise<R
     try {
       pageResult = await page.evaluate(() => {
         const rows: RecentTicket[] = [];
+        // Extract full datetime from a cell — checks title attr, all child text nodes,
+        // and any span/label that might carry the time portion.
+        function cellDateTime(cell: Element): string {
+          const title = cell.getAttribute("title")?.trim();
+          if (title && title.length > 0) return title;
+          const full = [...cell.childNodes]
+            .map((n) => n.textContent?.trim() ?? "")
+            .filter(Boolean)
+            .join(" ");
+          return full || cell.textContent?.trim() ?? "";
+        }
+
         document.querySelectorAll("table tbody tr").forEach((tr) => {
           const cells = [...tr.querySelectorAll("td")];
           if (cells.length < 10) return;
@@ -266,9 +278,9 @@ async function extractTicketList(page: Page, targetDateFrom?: string): Promise<R
           rows.push({
             task:         cells[0]?.textContent?.trim() ?? "",
             ticketNo:     cells[1]?.textContent?.trim() ?? "",
-            createdDate:  cells[2]?.textContent?.trim() ?? "",
-            reportedDate: cells[3]?.textContent?.trim() ?? "",
-            fixedDate:    cells[4]?.textContent?.trim() ?? "",
+            createdDate:  cellDateTime(cells[2]),
+            reportedDate: cellDateTime(cells[3]),
+            fixedDate:    cellDateTime(cells[4]),
             project:      cells[5]?.textContent?.trim() ?? "",
             module:       cells[6]?.textContent?.trim() ?? "",
             subject:      cells[7]?.textContent?.trim() ?? "",

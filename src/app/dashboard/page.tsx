@@ -64,8 +64,8 @@ function toDateOnly(s: string): string | null {
   if (!s) return null;
   // "YYYY-MM-DD..." — ISO or input value
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-  // "05-May-2026"
-  const m = s.match(/^(\d{1,2})-([A-Za-z]{3})[a-z]*-(\d{4})$/i);
+  // "05-May-2026" or "05-May-2026 10:30:00"
+  const m = s.match(/^(\d{1,2})-([A-Za-z]{3})[a-z]*-(\d{4})/i);
   if (m) {
     const mon = MONTH_MAP[m[2].charAt(0).toUpperCase() + m[2].slice(1, 3).toLowerCase()];
     if (mon) return `${m[3]}-${mon}-${m[1].padStart(2, "0")}`;
