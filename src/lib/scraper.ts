@@ -587,11 +587,12 @@ async function ensureAuthenticated(
 // ── Created-time enrichment ───────────────────────────────────────────────────
 
 async function fetchCreatedTime(page: Page, ticketNo: string): Promise<string | null> {
+  try {
   const url = `${BASE}/app/ticket/forms/${ticketNo}`;
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => {});
   await new Promise((r) => setTimeout(r, 2000));
 
-  return page.evaluate(() => {
+  return await page.evaluate(() => {
     const norm = (s: string) => s.toLowerCase().replace(/[^a-z]/g, "");
     const KEYS = ["createddate", "createdate", "datecreated", "creationdate", "created"];
     const candidates = [
@@ -615,6 +616,9 @@ async function fetchCreatedTime(page: Page, ticketNo: string): Promise<string | 
     }
     return null;
   });
+  } catch {
+    return null;
+  }
 }
 
 // Run an async function over an array with at most `concurrency` parallel tasks
