@@ -1105,9 +1105,32 @@ export default function Dashboard() {
   const [showOpenTicketsModal, setShowOpenTicketsModal] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | "unsupported">("default");
+  const [alertsEnabled, setAlertsEnabled] = useState<boolean>(() => {
+    try { return localStorage.getItem("sf-alerts-enabled") !== "false"; } catch { return true; }
+  });
   const prevOpenIdsRef = useRef<Set<string> | null>(null);
   const hasShownInitialModalRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const openModalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const newModalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Auto-close open tickets modal after 4 minutes
+  useEffect(() => {
+    if (openModalTimerRef.current) clearTimeout(openModalTimerRef.current);
+    if (showOpenTicketsModal) {
+      openModalTimerRef.current = setTimeout(() => setShowOpenTicketsModal(false), 4 * 60 * 1000);
+    }
+    return () => { if (openModalTimerRef.current) clearTimeout(openModalTimerRef.current); };
+  }, [showOpenTicketsModal]);
+
+  // Auto-close new ticket popup after 4 minutes
+  useEffect(() => {
+    if (newModalTimerRef.current) clearTimeout(newModalTimerRef.current);
+    if (showNewTicketModal) {
+      newModalTimerRef.current = setTimeout(() => setShowNewTicketModal(false), 4 * 60 * 1000);
+    }
+    return () => { if (newModalTimerRef.current) clearTimeout(newModalTimerRef.current); };
+  }, [showNewTicketModal]);
 
   const fetchData = useCallback(async () => {
     const res = await fetch("/api/data");
@@ -1163,7 +1186,7 @@ export default function Dashboard() {
     });
     setShowNewTicketModal(true);
 
-    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted" && alertsEnabled) {
       brandNew.forEach((t) => {
         new Notification("🔴 New Open Ticket — SF Dashboard", {
           body: `${t.ticketNo}  ·  ${t.project}`,
@@ -1691,19 +1714,32 @@ export default function Dashboard() {
               <button
                 onClick={async () => {
                   if (notifPermission === "denied") return;
-                  const result = await Notification.requestPermission();
-                  setNotifPermission(result);
+                  if (notifPermission !== "granted") {
+                    const result = await Notification.requestPermission();
+                    setNotifPermission(result);
+                    if (result === "granted") {
+                      setAlertsEnabled(true);
+                      try { localStorage.setItem("sf-alerts-enabled", "true"); } catch {}
+                    }
+                    return;
+                  }
+                  const next = !alertsEnabled;
+                  setAlertsEnabled(next);
+                  try { localStorage.setItem("sf-alerts-enabled", String(next)); } catch {}
                 }}
                 className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition ${
-                  notifPermission === "granted"
-                    ? "bg-green-600/20 border-green-700 text-green-400 cursor-default"
-                    : notifPermission === "denied"
+                  notifPermission === "denied"
                     ? "bg-red-600/20 border-red-700 text-red-400 cursor-not-allowed"
+                    : notifPermission === "granted" && alertsEnabled
+                    ? "bg-green-600/20 border-green-700 text-green-400 hover:bg-green-600/40 cursor-pointer"
+                    : notifPermission === "granted" && !alertsEnabled
+                    ? "bg-gray-700/40 border-gray-600 text-gray-400 hover:bg-gray-700 cursor-pointer"
                     : "bg-yellow-600/20 border-yellow-700 text-yellow-400 hover:bg-yellow-600/40 cursor-pointer"
                 }`}
                 title={
-                  notifPermission === "granted" ? "Desktop notifications are enabled" :
-                  notifPermission === "denied"  ? "Notifications blocked — unblock in browser site settings" :
+                  notifPermission === "denied"               ? "Notifications blocked — unblock in browser site settings" :
+                  notifPermission === "granted" && alertsEnabled  ? "Alerts on — click to turn off for this browser" :
+                  notifPermission === "granted" && !alertsEnabled ? "Alerts off — click to turn on for this browser" :
                   "Enable desktop notifications for new open tickets"
                 }
               >
@@ -1711,7 +1747,10 @@ export default function Dashboard() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                     d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                 </svg>
-                {notifPermission === "granted" ? "Alerts On" : notifPermission === "denied" ? "Alerts Blocked" : "Enable Alerts"}
+                {notifPermission === "denied" ? "Alerts Blocked" :
+                 notifPermission === "granted" && alertsEnabled  ? "Alerts On" :
+                 notifPermission === "granted" && !alertsEnabled ? "Alerts Off" :
+                 "Enable Alerts"}
               </button>
             )}
 
