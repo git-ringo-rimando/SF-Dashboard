@@ -26,7 +26,7 @@ async function getBrowser(): Promise<Browser> {
   return (activeBrowser = await puppeteer.launch({
     headless: true,
     executablePath,
-    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--single-process"],
+    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
     protocolTimeout: 300_000,
   }));
 }
@@ -254,35 +254,46 @@ async function extractTicketList(page: Page, targetDateFrom?: string): Promise<R
   const MAX_PAGES = targetDateFrom ? 200 : 75;
 
   for (let p = 0; p < MAX_PAGES; p++) {
-    // Extract tickets + check paginator in a single evaluate call
-    const { tickets, hasNext, firstTicketNo } = await page.evaluate(() => {
-      const rows: RecentTicket[] = [];
-      document.querySelectorAll("table tbody tr").forEach((tr) => {
-        const cells = [...tr.querySelectorAll("td")];
-        if (cells.length < 10) return;
-        const rawStatus = cells[10]?.textContent?.trim() ?? "";
-        rows.push({
-          task:         cells[0]?.textContent?.trim() ?? "",
-          ticketNo:     cells[1]?.textContent?.trim() ?? "",
-          createdDate:  cells[2]?.textContent?.trim() ?? "",
-          reportedDate: cells[3]?.textContent?.trim() ?? "",
-          fixedDate:    cells[4]?.textContent?.trim() ?? "",
-          project:      cells[5]?.textContent?.trim() ?? "",
-          module:       cells[6]?.textContent?.trim() ?? "",
-          subject:      cells[7]?.textContent?.trim() ?? "",
-          severity:     cells[8]?.textContent?.trim() ?? "",
-          completion:   cells[9]?.textContent?.trim() ?? "",
-          status:       rawStatus.replace(/\d+\s*ui-btn/gi, "").trim(),
+    // Recover from detached frame caused by Angular re-renders during pagination
+    let pageResult: { tickets: RecentTicket[]; hasNext: boolean; firstTicketNo: string };
+    try {
+      pageResult = await page.evaluate(() => {
+        const rows: RecentTicket[] = [];
+        document.querySelectorAll("table tbody tr").forEach((tr) => {
+          const cells = [...tr.querySelectorAll("td")];
+          if (cells.length < 10) return;
+          const rawStatus = cells[10]?.textContent?.trim() ?? "";
+          rows.push({
+            task:         cells[0]?.textContent?.trim() ?? "",
+            ticketNo:     cells[1]?.textContent?.trim() ?? "",
+            createdDate:  cells[2]?.textContent?.trim() ?? "",
+            reportedDate: cells[3]?.textContent?.trim() ?? "",
+            fixedDate:    cells[4]?.textContent?.trim() ?? "",
+            project:      cells[5]?.textContent?.trim() ?? "",
+            module:       cells[6]?.textContent?.trim() ?? "",
+            subject:      cells[7]?.textContent?.trim() ?? "",
+            severity:     cells[8]?.textContent?.trim() ?? "",
+            completion:   cells[9]?.textContent?.trim() ?? "",
+            status:       rawStatus.replace(/\d+\s*ui-btn/gi, "").trim(),
+          });
         });
+        const nextBtn = document.querySelector(".ui-paginator-next");
+        return {
+          tickets:       rows.filter((t) => t.ticketNo),
+          hasNext:       !!nextBtn && !nextBtn.classList.contains("ui-state-disabled"),
+          firstTicketNo: rows[0]?.ticketNo ?? "",
+        };
       });
-      const nextBtn = document.querySelector(".ui-paginator-next");
-      return {
-        tickets:       rows.filter((t) => t.ticketNo),
-        hasNext:       !!nextBtn && !nextBtn.classList.contains("ui-state-disabled"),
-        firstTicketNo: rows[0]?.ticketNo ?? "",
-      };
-    });
+    } catch (e) {
+      const msg = String(e);
+      if (msg.includes("detached Frame") || msg.includes("Execution context was destroyed")) {
+        await page.waitForSelector("table tbody tr", { timeout: 15000 }).catch(() => {});
+        continue;
+      }
+      throw e;
+    }
 
+    const { tickets, hasNext, firstTicketNo } = pageResult;
     all.push(...tickets);
 
     // Stop when oldest ticket on page is on or before the target date
@@ -294,7 +305,7 @@ async function extractTicketList(page: Page, targetDateFrom?: string): Promise<R
     if (!hasNext) break;
 
     // Fast page turn: click Next, then wait only until the first row changes
-    await page.click(".ui-paginator-next");
+    await page.click(".ui-paginator-next").catch(() => {});
     await page
       .waitForFunction(
         (prev) => {
